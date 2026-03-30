@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Advanced D3 Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f5f7fb;
+      color: #222;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    select {
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .kpi-title {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .kpi-value {
+      font-size: 26px;
+      font-weight: bold;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .wide {
+      grid-column: 1 / span 2;
+    }
+
+    .chart-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    svg {
+      width: 100%;
+      height: auto;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+      text-align: left;
+    }
+
+    th {
+      background: #f0f2f7;
+    }
+
+    .axis path, .axis line {
+      stroke: #999;
+    }
+
+    @media (max-width: 1000px) {
+      .kpis {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .wide {
+        grid-column: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Retail Performance Dashboard</h1>
+
+  <div class="filters">
+    <div>
+      <label>Region:</label>
+      <select id="regionFilter">
+        <option value="All">All</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Category:</label>
+      <select id="categoryFilter">
+        <option value="All">All</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="card"><div class="kpi-title">Total Sales</div><div class="kpi-value" id="kpiSales">0</div></div>
+    <div class="card"><div class="kpi-title">Total Profit</div><div class="kpi-value" id="kpiProfit">0</div></div>
+    <div class="card"><div class="kpi-title">Orders</div><div class="kpi-value" id="kpiOrders">0</div></div>
+    <div class="card"><div class="kpi-title">Units Sold</div><div class="kpi-value" id="kpiUnits">0</div></div>
+    <div class="card"><div class="kpi-title">Avg Discount</div><div class="kpi-value" id="kpiDiscount">0</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="chart-title">Sales vs Profit by Category</div>
+      <svg id="groupedBarChart" viewBox="0 0 650 360"></svg>
+    </div>
+
+    <div class="card">
+      <div class="chart-title">Top 8 Products by Sales</div>
+      <svg id="topProductsChart" viewBox="0 0 650 360"></svg>
+    </div>
+
+    <div class="card wide">
+      <div class="chart-title">Monthly Sales Trend by Channel</div>
+      <svg id="multiLineChart" viewBox="0 0 980 380"></svg>
+    </div>
+
+    <div class="card wide">
+      <div class="chart-title">Filtered Records Preview</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Region</th>
+            <th>Category</th>
+            <th>Product</th>
+            <th>Channel</th>
+            <th>Sales</th>
+            <th>Profit</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("retail_dashboard_data.csv").then(data => {
+      data.forEach(d => {
+        d.date = new Date(d.date);
+        d.sales = +d.sales;
+        d.profit = +d.profit;
+        d.quantity = +d.quantity;
+        d.discount = +d.discount;
+      });
+
+      const regionFilter = d3.select("#regionFilter");
+      const categoryFilter = d3.select("#categoryFilter");
+
+      const regions = Array.from(new Set(data.map(d => d.region))).sort();
+      const categories = Array.from(new Set(data.map(d => d.category))).sort();
+
+      regions.forEach(r => {
+        regionFilter.append("option").attr("value", r).text(r);
+      });
+
+      categories.forEach(c => {
+        categoryFilter.append("option").attr("value", c).text(c);
+      });
+
+      function getFilteredData() {
+        const region = regionFilter.property("value");
+        const category = categoryFilter.property("value");
+
+        return data.filter(d => {
+          const regionMatch = region === "All" || d.region === region;
+          const categoryMatch = category === "All" || d.category === category;
+          return regionMatch && categoryMatch;
+        });
+      }
+
+      function updateDashboard() {
+        const filtered = getFilteredData();
+        updateKPIs(filtered);
+        drawGroupedBarChart(filtered);
+        drawTopProductsChart(filtered);
+        drawMultiLineChart(filtered);
+        updateTable(filtered);
+      }
+
+      function updateKPIs(filtered) {
+        d3.select("#kpiSales").text(d3.format(",")(d3.sum(filtered, d => d.sales)));
+        d3.select("#kpiProfit").text(d3.format(",")(d3.sum(filtered, d => d.profit)));
+        d3.select("#kpiOrders").text(filtered.length);
+        d3.select("#kpiUnits").text(d3.sum(filtered, d => d.quantity));
+        d3.select("#kpiDiscount").text(d3.format(".1%")(d3.mean(filtered, d => d.discount) || 0));
+      }
+
+      function drawGroupedBarChart(filtered) {
+        const svg = d3.select("#groupedBarChart");
+        svg.selectAll("*").remove();
+
+        const margin = { top: 30, right: 20, bottom: 60, left: 70 };
+        const width = 650 - margin.left - margin.right;
+        const height = 360 - margin.top - margin.bottom;
+
+        const g = svg.append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const summary = Array.from(
+          d3.rollup(
+            filtered,
+            v => ({
+              sales: d3.sum(v, d => d.sales),
+              profit: d3.sum(v, d => d.profit)
+            }),
+            d => d.category
+          ),
+          ([category, values]) => ({
+            category,
+            sales: values.sales,
+            profit: values.profit
+          })
+        );
+
+        const subgroups = ["sales", "profit"];
+
+        const x0 = d3.scaleBand()
+          .domain(summary.map(d => d.category))
+          .range([0, width])
+          .padding(0.25);
+
+        const x1 = d3.scaleBand()
+          .domain(subgroups)
+          .range([0, x0.bandwidth()])
+          .padding(0.1);
+
+        const y = d3.scaleLinear()
+          .domain([0, d3.max(summary, d => Math.max(d.sales, d.profit)) || 0])
+          .nice()
+          .range([height, 0]);
+
+        const color = d3.scaleOrdinal()
+          .domain(subgroups)
+          .range(["#4e79a7", "#f28e2b"]);
+
+        g.append("g")
+          .attr("class", "axis")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x0));
+
+        g.append("g")
+          .attr("class", "axis")
+          .call(d3.axisLeft(y));
+
+        const groups = g.selectAll(".category-group")
+          .data(summary)
+          .enter()
+          .append("g")
+          .attr("transform", d => `translate(${x0(d.category)},0)`);
+
+        groups.selectAll("rect")
+          .data(d => subgroups.map(key => ({ key, value: d[key], category: d.category })))
+          .enter()
+          .append("rect")
+          .attr("x", d => x1(d.key))
+          .attr("y", d => y(d.value))
+          .attr("width", x1.bandwidth())
+          .attr("height", d => height - y(d.value))
+          .attr("fill", d => color(d.key))
+          .on("mouseover", function(event, d) {
+            tooltip
+              .style("opacity", 1)
+              .html(`<strong>${d.category}</strong><br>${d.key}: ${d3.format(",")(d.value)}`)
+              .style("left", (event.pageX + 10) + "px")
+              .style("top", (event.pageY - 20) + "px");
+          })
+          .on("mouseout", function() {
+            tooltip.style("opacity", 0);
+          });
+
+        const legend = g.append("g")
+          .attr("transform", `translate(${width - 120},0)`);
+
+        subgroups.forEach((key, i) => {
+          const row = legend.append("g")
+            .attr("transform", `translate(0,${i * 22})`);
+
+          row.append("rect")
+            .attr("width", 14)
+            .attr("height", 14)
+            .attr("fill", color(key));
+
+          row.append("text")
+            .attr("x", 20)
+            .attr("y", 12)
+            .text(key.charAt(0).toUpperCase() + key.slice(1));
+        });
+      }
+
+      function drawTopProductsChart(filtered) {
+        const svg = d3.select("#topProductsChart");
+        svg.selectAll("*").remove();
+
+        const margin = { top: 20, right: 20, bottom: 40, left: 150 };
+        const width = 650 - margin.left - margin.right;
+        const height = 360 - margin.top - margin.bottom;
+
+        const g = svg.append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const topProducts = Array.from(
+          d3.rollup(filtered, v => d3.sum(v, d => d.sales), d => d.product),
+          ([product, sales]) => ({ product, sales })
+        )
+        .sort((a, b) => b.sales - a.sales)
+        .slice(0, 8);
+
+        const x = d3.scaleLinear()
+          .domain([0, d3.max(topProducts, d => d.sales) || 0])
+          .nice()
+          .range([0, width]);
+
+        const y = d3.scaleBand()
+          .domain(topProducts.map(d => d.product))
+          .range([0, height])
+          .padding(0.2);
+
+        g.append("g")
+          .attr("class", "axis")
+          .call(d3.axisLeft(y));
+
+        g.append("g")
+          .attr("class", "axis")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x));
+
+        g.selectAll("rect")
+          .data(topProducts)
+          .enter()
+          .append("rect")
+          .attr("x", 0)
+          .attr("y", d => y(d.product))
+          .attr("width", d => x(d.sales))
+          .attr("height", y.bandwidth())
+          .attr("fill", "#59a14f")
+          .on("mouseover", function(event, d) {
+            tooltip
+              .style("opacity", 1)
+              .html(`<strong>${d.product}</strong><br>Sales: ${d3.format(",")(d.sales)}`)
+              .style("left", (event.pageX + 10) + "px")
+              .style("top", (event.pageY - 20) + "px");
+          })
+          .on("mouseout", function() {
+            tooltip.style("opacity", 0);
+          });
+
+        g.selectAll(".value-label")
+          .data(topProducts)
+          .enter()
+          .append("text")
+          .attr("x", d => x(d.sales) + 6)
+          .attr("y", d => y(d.product) + y.bandwidth() / 2 + 4)
+          .text(d => d3.format(",")(d.sales))
+          .attr("font-size", 12);
+      }
+
+      function drawMultiLineChart(filtered) {
+        const svg = d3.select("#multiLineChart");
+        svg.selectAll("*").remove();
+
+        const margin = { top: 25, right: 120, bottom: 50, left: 70 };
+        const width = 980 - margin.left - margin.right;
+        const height = 380 - margin.top - margin.bottom;
+
+        const g = svg.append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const channels = Array.from(new Set(filtered.map(d => d.channel))).sort();
+
+        const monthly = Array.from(
+          d3.rollup(
+            filtered,
+            v => d3.sum(v, d => d.sales),
+            d => d.channel,
+            d => d3.timeMonth(d.date)
+          ),
+          ([channel, monthMap]) => ({
+            channel,
+            values: Array.from(monthMap, ([month, sales]) => ({ month, sales }))
+              .sort((a, b) => a.month - b.month)
+          })
+        );
+
+        const allPoints = monthly.flatMap(d => d.values);
+
+        const x = d3.scaleTime()
+          .domain(d3.extent(allPoints, d => d.month))
+          .range([0, width]);
+
+        const y = d3.scaleLinear()
+          .domain([0, d3.max(allPoints, d => d.sales) || 0])
+          .nice()
+          .range([height, 0]);
+
+        const color = d3.scaleOrdinal()
+          .domain(channels)
+          .range(d3.schemeTableau10);
+
+        const line = d3.line()
+          .x(d => x(d.month))
+          .y(d => y(d.sales));
+
+        g.append("g")
+          .attr("class", "axis")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x).ticks(6).tickFormat(d3.timeFormat("%b %Y")));
+
+        g.append("g")
+          .attr("class", "axis")
+          .call(d3.axisLeft(y));
+
+        monthly.forEach(series => {
+          g.append("path")
+            .datum(series.values)
+            .attr("fill", "none")
+            .attr("stroke", color(series.channel))
+            .attr("stroke-width", 3)
+            .attr("d", line);
+
+          g.selectAll(`.dot-${series.channel}`)
+            .data(series.values)
+            .enter()
+            .append("circle")
+            .attr("cx", d => x(d.month))
+            .attr("cy", d => y(d.sales))
+            .attr("r", 4)
+            .attr("fill", color(series.channel))
+            .on("mouseover", function(event, d) {
+              tooltip
+                .style("opacity", 1)
+                .html(`<strong>${series.channel}</strong><br>${d3.timeFormat("%b %Y")(d.month)}<br>Sales: ${d3.format(",")(d.sales)}`)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 20) + "px");
+            })
+            .on("mouseout", function() {
+              tooltip.style("opacity", 0);
+            });
+        });
+
+        const legend = g.append("g")
+          .attr("transform", `translate(${width + 20},20)`);
+
+        channels.forEach((channel, i) => {
+          const row = legend.append("g")
+            .attr("transform", `translate(0,${i * 24})`);
+
+          row.append("rect")
+            .attr("width", 14)
+            .attr("height", 14)
+            .attr("fill", color(channel));
+
+          row.append("text")
+            .attr("x", 20)
+            .attr("y", 12)
+            .text(channel);
+        });
+      }
+
+      function updateTable(filtered) {
+        const tbody = d3.select("#dataTableBody");
+        tbody.selectAll("*").remove();
+
+        filtered
+          .slice()
+          .sort((a, b) => b.date - a.date)
+          .slice(0, 12)
+          .forEach(d => {
+            const row = tbody.append("tr");
+            row.append("td").text(d3.timeFormat("%Y-%m-%d")(d.date));
+            row.append("td").text(d.region);
+            row.append("td").text(d.category);
+            row.append("td").text(d.product);
+            row.append("td").text(d.channel);
+            row.append("td").text(d3.format(",")(d.sales));
+            row.append("td").text(d3.format(",")(d.profit));
+            row.append("td").text(d.quantity);
+          });
+      }
+
+      regionFilter.on("change", updateDashboard);
+      categoryFilter.on("change", updateDashboard);
+
+      updateDashboard();
+    });
+  </script>
+</body>
+</html>
